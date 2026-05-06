@@ -4,17 +4,27 @@ import time
 import os
 import urllib.parse
 import random
+import redis
 
 # --- [ KONFIGURASI ] ---
 TOKEN = '8741502539:AAFHqzudVXD8C2m2xVudWJNs6ABu4V_YRz0'
 CHAT_ID = '-1003997113925' 
-DB_FILE = "database_loker.txt"
+
+# URL Redis yang kamu kasih tadi
+REDIS_URL = 'redis://default:JLZspxuVQdJlGmpjTmzHFJvfxWWAJTEe@redis.railway.internal:6379'
+
+try:
+    db = redis.from_url(REDIS_URL, decode_responses=True)
+    print("✅ Berhasil terhubung ke database Redis!")
+except Exception as e:
+    db = None
+    print(f"❌ Gagal koneksi Redis: {e}")
+
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7'
 }
 
-# --- [ KONTEN IKLAN ] ---
 IKLAN_LIST = [
     "🎨 *BUTUH LOGO PROFESIONAL?*\n\nBikin identitas bisnismu makin berkelas di *Luxcreativeee*.\n📸 *Cek:* [Instagram @luxcreativeee](https://www.instagram.com/luxcreativeee)",
     "🚀 *JASA PROMOSI GRUP / BISNIS*\n\nMau loker atau bisnismu dipromosikan otomatis?\n📩 *Hubungi Owner:* [Chat FELIXDEV](https://t.me/felixdev_owner)"
@@ -30,7 +40,6 @@ def kirim_telegram(pesan):
         return False
 
 def cek_pesan_masuk():
-    """Fitur Tes: Biar bot bisa bales kalau dichat 'tes' dan lapor di log"""
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
         res = requests.get(url, params={'offset': -1, 'timeout': 1}, timeout=5).json()
@@ -39,17 +48,12 @@ def cek_pesan_masuk():
             update_id = update["update_id"]
             message = update.get("message", {})
             text = message.get("text", "").lower()
-            
             if "tes" in text:
-                kirim_telegram("✅ *Bot VELA Aktif, Bos!* \nSedang memantau loker dari 5 sumber raksasa... 🚀")
-                print(f">>> Membalas pesan tes dan membersihkan antrean (ID: {update_id})")
-                # Agar tidak dibalas berulang, kita konfirmasi pesan sudah dibaca
+                kirim_telegram("✅ *Bot VELA Aktif (Database: REDIS)!* \nSedang memantau loker... 🚀")
                 requests.get(url, params={'offset': update_id + 1})
-    except:
-        pass
+    except: pass
 
-# --- [ KUMPULAN SCRAPER ] ---
-
+# --- [ SCRAPERS ] ---
 def scrape_jora():
     jobs = []
     try:
@@ -107,57 +111,54 @@ def scrape_loker_id():
     return jobs
 
 # --- [ MAIN ENGINE ] ---
-
 if __name__ == "__main__":
-    print("🚀 BOT VELA ULTRA DEPLOYED!")
-    if not os.path.exists(DB_FILE): open(DB_FILE, "w").close()
+    print("🚀 BOT VELA ULTRA + REDIS DATABASE ONLINE!")
     loker_counter = 0
 
     while True:
         cek_pesan_masuk()
-        print(f"🔄 [{time.strftime('%H:%M:%S')}] Memindai loker baru...")
+        print(f"🔄 [{time.strftime('%H:%M:%S')}] Memindai loker...")
         
-        # Ambil data dari semua sumber
         semua_loker = (scrape_jora() + scrape_karir() + scrape_glints() + 
                        scrape_linkedin() + scrape_loker_id())
         
-        with open(DB_FILE, "r") as f:
-            db_content = f.read()
-
         ditemukan_baru = 0
         for job in semua_loker:
-            # Fitur Anti-Spam: Maksimal 3 loker per putaran
-            if ditemukan_baru >= 3:
-                break
+            # Mode Anti-Spam: Maksimal 3 loker baru per putaran
+            if ditemukan_baru >= 3: break
 
-            if job['link'] not in db_content:
-                msg = (
-                    f"📢 *LOWONGAN TERBARU*\n\n"
-                    f"📌 *Posisi:* {job['judul']}\n"
-                    f"🌐 *Sumber:* {job['sumber']}\n\n"
-                    f"🔗 [Klik untuk Detail/Lamar]({job['link']})\n\n"
-                    f"#loker #indonesia #lokermu #{job['sumber'].lower().replace('.','')}"
-                )
+            # Cek di Redis
+            is_new = False
+            if db:
+                if not db.get(job['link']):
+                    is_new = True
+            else:
+                # Fallback kalau Redis mati (jarang terjadi)
+                is_new = True 
+
+            if is_new:
+                msg = (f"📢 *LOWONGAN TERBARU*\n\n📌 *Posisi:* {job['judul']}\n🌐 *Sumber:* {job['sumber']}\n\n"
+                       f"🔗 [Klik untuk Detail]({job['link']})\n\n#loker #indonesia")
                 
                 if kirim_telegram(msg):
-                    with open(DB_FILE, "a") as f:
-                        f.write(job['link'] + "\n")
+                    if db:
+                        # Simpan ke Redis (kadaluarsa 7 hari)
+                        db.setex(job['link'], 604800, "sent")
                     
                     ditemukan_baru += 1
                     loker_counter += 1
                     print(f"   ✅ Terkirim: {job['judul'][:30]}...")
                     
-                    # Fitur Iklan: Muncul tiap 10-15 loker
                     if loker_counter >= 12:
                         time.sleep(10)
                         kirim_telegram(random.choice(IKLAN_LIST))
                         loker_counter = 0
                 
-                time.sleep(10) # Jeda antar pesan biar gak nyepam
+                time.sleep(10)
 
-        print(f"✨ Selesai putaran ini. Ditemukan {ditemukan_baru} baru.")
+        print(f"✨ Selesai. Ditemukan {ditemukan_baru} loker baru.")
         
-        # Standby 10 menit (Total 60 * 10 detik) sambil tetap bisa membalas 'tes'
+        # Standby 10 menit
         print("😴 Standby mode (10 mins)...")
         for _ in range(60): 
             cek_pesan_masuk()
