@@ -50,8 +50,10 @@ def analisa_loker_ai(judul, sumber):
         "dan 'catatan' (tips singkat keamanan)."
     )
     payload = {
-        "model": "openai/gpt-4o-mini-2024-07-18", # Model GPT yang sangat stabil & murah/gratis
-        "messages": [{"role": "user", "content": prompt}]
+        # Menggunakan GPT-4o-mini versi gratis dari OpenRouter
+        "model": "openai/gpt-4o-mini-2024-07-18:free", 
+        "messages": [{"role": "user", "content": prompt}],
+        "route": "fallback" # Fitur agar otomatis cari jalur cadangan jika satu endpoint mati
     }
     headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
     
