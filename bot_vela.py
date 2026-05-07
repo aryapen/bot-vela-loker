@@ -63,6 +63,37 @@ def analisa_loker_ai(judul, sumber):
     except:
         return {"ringkasan": judul, "kategori": "Umum", "skor_aman": 70, "catatan": "Selalu waspada penipuan."}
 
+def cek_konten_jorok_ai(teks):
+    """Mendeteksi kata kasar, toxic, atau asusila menggunakan AI"""
+    if not OPENROUTER_API_KEY: 
+        return False
+    
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    # Prompt instruksi khusus untuk AI
+    prompt = (
+        f"Analisa pesan ini: '{teks}'. "
+        "Apakah mengandung kata kasar, umpatan, penghinaan, atau konten asusila/pornografi "
+        "dalam bahasa Indonesia atau daerah? Jawab hanya satu kata: 'YA' atau 'TIDAK'."
+    )
+    
+    payload = {
+        "model": "google/gemini-flash-1.5-8b:free",
+        "messages": [{"role": "user", "content": prompt}]
+    }
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}", 
+        "Content-Type": "application/json"
+    }
+
+    try:
+        res = requests.post(url, headers=headers, data=json.dumps(payload), timeout=5)
+        # Ambil jawaban AI dan bersihkan spasi/karakter aneh
+        jawaban = res.json()['choices'][0]['message']['content'].strip().upper()
+        return "YA" in jawaban
+    except Exception as e:
+        print(f"⚠️ AI Detector Error: {e}")
+        return False
+
 # --- [ CORE FUNCTIONS : TELEGRAM & PROTEKSI ] ---
 def kirim_telegram(pesan, link=None):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -75,24 +106,36 @@ def kirim_telegram(pesan, link=None):
     except: return False
 
 def proteksi_grup(update):
-    """MENGHAPUS pesan kasar atau link luar (Fitur Guardian)"""
+    """Menghapus pesan berdasarkan filter AI dan link luar"""
     message = update.get("message", {})
-    text = message.get("text", "").lower()
+    text = message.get("text", "")
     chat_id = message.get("chat", {}).get("id")
     message_id = message.get("message_id")
     user = message.get("from", {}).get("username", "User")
 
     if not text: return False
-    found_bad = any(word in text for word in KATA_KASAR + WEB_TERLARANG)
-    found_link = any(x in text for x in ["http://", "https://", "www.", ".com", ".link", ".xyz"])
 
-    if found_bad or found_link:
+    # 1. Filter Cepat: Link Luar (Hemat kuota API AI)
+    found_link = any(x in text.lower() for x in ["http://", "https://", "www.", ".com", ".link", ".xyz", "bit.ly"])
+    
+    # 2. Filter Pintar: AI Anti-Toxic
+    # Kita hanya tanya AI kalau pesannya bukan perintah bot (seperti /start atau tes)
+    is_toxic = False
+    if not text.startswith('/') and len(text) > 2:
+        print(f"🧐 Memeriksa pesan @{user} via AI...")
+        is_toxic = cek_konten_jorok_ai(text)
+
+    if is_toxic or found_link:
+        # Hapus pesan dari grup
         url_del = f"https://api.telegram.org/bot{TOKEN}/deleteMessage"
         requests.post(url_del, data={'chat_id': chat_id, 'message_id': message_id})
-        kirim_telegram(f"⚠️ @{user}, dilarang mengirim pesan kasar atau link luar!")
+        
+        # Kirim peringatan
+        alasan = "KATA KASAR/TOXIC" if is_toxic else "LINK LUAR/SPAM"
+        kirim_telegram(f"🚫 @{user}, pesan kamu dihapus karena mengandung *{alasan}*! Jaga kesantunan ya.")
         return True
     return False
-
+    
 def cek_pesan_masuk():
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
