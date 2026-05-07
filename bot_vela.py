@@ -66,44 +66,50 @@ def analisa_loker_ai(judul, sumber):
         return {"ringkasan": judul, "kategori": "Umum", "skor_aman": 70, "catatan": "Selalu waspada penipuan."}
 
 def cek_konten_jorok_ai(teks):
-    """Mendeteksi kata kasar dengan penanganan error yang lebih detail"""
-    if not OPENROUTER_API_KEY: 
-        return False
+    """Mendeteksi kata kasar dengan sistem cadangan (Fallback) otomatis"""
+    if not OPENROUTER_API_KEY: return False
     
     url = "https://openrouter.ai/api/v1/chat/completions"
     prompt = (
-        f"Analisa pesan ini: '{teks}'. Apakah mengandung kata kasar, umpatan, atau asusila? "
+        f"Analisa pesan ini: '{teks}'. Apakah mengandung kata kasar, penghinaan, atau asusila? "
         "Jawab hanya satu kata: 'YA' atau 'TIDAK'."
     )
     
-    payload = {
-        "model": "google/gemini-flash-1.5-8b:free",
-        "messages": [{"role": "user", "content": prompt}]
-    }
+    # DAFTAR MODEL GRATIS (Urutan dari yang paling stabil)
+    model_gratis = [
+        "openai/gpt-4o-mini:free",
+        "google/gemini-2.0-flash-exp:free",
+        "meta-llama/llama-3.1-8b-instruct:free",
+        "mistralai/pixtral-12b:free"
+    ]
+    
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}", 
         "Content-Type": "application/json"
     }
 
-    try:
-        res = requests.post(url, headers=headers, data=json.dumps(payload), timeout=7)
-        hasil_json = res.json()
-        
-        # Cek apakah ada error dari OpenRouter
-        if 'error' in hasil_json:
-            print(f"❌ OpenRouter Error: {hasil_json['error'].get('message')}")
-            return False
-
-        # Pastikan 'choices' ada di dalam respon
-        if 'choices' in hasil_json:
-            jawaban = hasil_json['choices'][0]['message']['content'].strip().upper()
-            return "YA" in jawaban
-        
-        print(f"⚠️ Respon aneh: {hasil_json}")
-        return False
-    except Exception as e:
-        print(f"⚠️ Koneksi Error: {e}")
-        return False
+    for model in model_gratis:
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}]
+        }
+        try:
+            res = requests.post(url, headers=headers, data=json.dumps(payload), timeout=7)
+            hasil = res.json()
+            
+            # Jika model ini sukses dan ada jawabannya
+            if 'choices' in hasil:
+                jawaban = hasil['choices'][0]['message']['content'].strip().upper()
+                print(f"✅ AI ({model}) Check: {jawaban}")
+                return "YA" in jawaban
+            else:
+                # Jika model ini error/no endpoint, lanjut ke model berikutnya di list
+                print(f"⚠️ Model {model} gagal, mencoba model cadangan...")
+                continue
+        except:
+            continue
+            
+    return False # Jika semua model gagal, anggap aman saja agar tidak error
 
 # --- [ CORE FUNCTIONS : TELEGRAM & PROTEKSI ] ---
 def kirim_telegram(pesan, link=None):
