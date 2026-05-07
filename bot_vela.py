@@ -10,7 +10,6 @@ import redis
 TOKEN = '8741502539:AAFHqzudVXD8C2m2xVudWJNs6ABu4V_YRz0'
 CHAT_ID = '-1003997113925' 
 
-# URL Redis yang kamu kasih tadi
 REDIS_URL = 'redis://default:JLZspxuVQdJlGmpjTmzHFJvfxWWAJTEe@redis.railway.internal:6379'
 
 try:
@@ -30,6 +29,7 @@ IKLAN_LIST = [
     "🚀 *JASA PROMOSI GRUP / BISNIS*\n\nMau loker atau bisnismu dipromosikan otomatis?\n📩 *Hubungi Owner:* [Chat FELIXDEV](https://t.me/felixdev_owner)"
 ]
 
+# --- [ CORE FUNCTIONS ] ---
 def kirim_telegram(pesan):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     payload = {'chat_id': CHAT_ID, 'text': pesan, 'parse_mode': 'Markdown', 'disable_web_page_preview': False}
@@ -49,11 +49,11 @@ def cek_pesan_masuk():
             message = update.get("message", {})
             text = message.get("text", "").lower()
             if "tes" in text:
-                kirim_telegram("✅ *Bot VELA Aktif (Database: REDIS)!* \nSedang memantau loker... 🚀")
+                kirim_telegram("✅ *Bot VELA Freelance Aktif!* \nSedang memantau loker & project... 🚀")
                 requests.get(url, params={'offset': update_id + 1})
     except: pass
 
-# --- [ SCRAPERS ] ---
+# --- [ SCRAPERS LOKER REGULAR ] ---
 def scrape_jora():
     jobs = []
     try:
@@ -76,55 +76,94 @@ def scrape_karir():
     except: pass
     return jobs
 
-def scrape_glints():
+# --- [ SCRAPERS FREELANCE & PROJECT ] ---
+def scrape_projects_id():
+    """Scrape project terbaru dari Projects.co.id"""
     jobs = []
     try:
-        res = requests.get("https://glints.com/api/v1/search/jobs?location=Indonesia&limit=5", headers=HEADERS, timeout=10)
-        data = res.json()
-        for item in data.get('data', []):
-            jobs.append({"judul": item.get('title'), "link": f"https://glints.com/id/opportunities/jobs/{item.get('id')}", "sumber": "Glints"})
+        res = requests.get("https://projects.co.id/public/browse_projects/listing", headers=HEADERS, timeout=10)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        for row in soup.find_all('div', class_='row')[1:6]:
+            h2 = row.find('h2')
+            if h2 and h2.find('a'):
+                a = h2.find('a')
+                jobs.append({
+                    "judul": f"Project: {a.text.strip()}",
+                    "link": a['href'],
+                    "sumber": "Projects.co.id"
+                })
     except: pass
     return jobs
 
-def scrape_linkedin():
+def scrape_sribulancer():
+    """Scrape freelance jobs dari Sribulancer"""
     jobs = []
     try:
-        query = urllib.parse.quote('site:id.linkedin.com/jobs/view "Indonesia" "1 day ago"')
+        res = requests.get("https://www.sribulancer.com/id/jobs", headers=HEADERS, timeout=10)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        for job in soup.select('.job-list-item')[:5]:
+            a = job.select_one('h3 a')
+            if a:
+                jobs.append({
+                    "judul": f"Freelance: {a.text.strip()}",
+                    "link": "https://www.sribulancer.com" + a['href'],
+                    "sumber": "Sribulancer"
+                })
+    except: pass
+    return jobs
+
+def scrape_glints_freelance():
+    """Scrape khusus tipe Freelance di Glints"""
+    jobs = []
+    try:
+        # Menambahkan filter jobTypes=FREELANCE
+        res = requests.get("https://glints.com/api/v1/search/jobs?location=Indonesia&limit=5&jobTypes=FREELANCE", headers=HEADERS, timeout=10)
+        data = res.json()
+        for item in data.get('data', []):
+            jobs.append({
+                "judul": f"Freelance: {item.get('title')}", 
+                "link": f"https://glints.com/id/opportunities/jobs/{item.get('id')}", 
+                "sumber": "Glints Freelance"
+            })
+    except: pass
+    return jobs
+
+def scrape_linkedin_freelance():
+    """Cari freelance via Google Search (LinkedIn)"""
+    jobs = []
+    try:
+        query = urllib.parse.quote('site:id.linkedin.com/jobs/view "Indonesia" "freelance" "remote"')
         res = requests.get(f"https://www.google.com/search?q={query}", headers=HEADERS, timeout=15)
         soup = BeautifulSoup(res.text, 'html.parser')
         for g in soup.find_all('div', class_='tF2Cxc')[:3]:
             link = g.find('a')['href']
             if "linkedin.com/jobs" in link:
-                jobs.append({"judul": g.find('h3').text if g.find('h3') else "Loker LinkedIn", "link": link, "sumber": "LinkedIn"})
-    except: pass
-    return jobs
-
-def scrape_loker_id():
-    jobs = []
-    try:
-        res = requests.get("https://www.loker.id/cari-lowongan-kerja", headers=HEADERS, timeout=10)
-        soup = BeautifulSoup(res.text, 'html.parser')
-        for card in soup.find_all('div', class_='job-box')[:5]:
-            a = card.find('h3').find('a') if card.find('h3') else None
-            if a: jobs.append({"judul": a.text.strip(), "link": a['href'], "sumber": "Loker.id"})
+                jobs.append({"judul": "Loker Freelance LinkedIn", "link": link, "sumber": "LinkedIn"})
     except: pass
     return jobs
 
 # --- [ MAIN ENGINE ] ---
 if __name__ == "__main__":
-    print("🚀 BOT VELA ULTRA + REDIS DATABASE ONLINE!")
+    print("🚀 BOT VELA ULTRA FREELANCE + REDIS ONLINE!")
     loker_counter = 0
 
     while True:
         cek_pesan_masuk()
-        print(f"🔄 [{time.strftime('%H:%M:%S')}] Memindai loker...")
+        print(f"🔄 [{time.strftime('%H:%M:%S')}] Memindai loker & freelance...")
         
-        semua_loker = (scrape_jora() + scrape_karir() + scrape_glints() + 
-                       scrape_linkedin() + scrape_loker_id())
+        # Gabungkan semua sumber
+        semua_loker = (
+            scrape_jora() + 
+            scrape_karir() + 
+            scrape_projects_id() + 
+            scrape_sribulancer() + 
+            scrape_glints_freelance() + 
+            scrape_linkedin_freelance()
+        )
         
         ditemukan_baru = 0
         for job in semua_loker:
-            # Mode Anti-Spam: Maksimal 3 loker baru per putaran
+            # Mode Anti-Spam: Maksimal 3 konten baru per putaran agar tidak di-ban Telegram
             if ditemukan_baru >= 3: break
 
             # Cek di Redis
@@ -133,12 +172,16 @@ if __name__ == "__main__":
                 if not db.get(job['link']):
                     is_new = True
             else:
-                # Fallback kalau Redis mati (jarang terjadi)
                 is_new = True 
 
             if is_new:
-                msg = (f"📢 *LOWONGAN TERBARU*\n\n📌 *Posisi:* {job['judul']}\n🌐 *Sumber:* {job['sumber']}\n\n"
-                       f"🔗 [Klik untuk Detail]({job['link']})\n\n#loker #indonesia")
+                # Format Pesan
+                emoji = "💼" if "Project" in job['judul'] else "📢"
+                msg = (f"{emoji} *LOWONGAN/PROJECT BARU*\n\n"
+                       f"📌 *Posisi:* {job['judul']}\n"
+                       f"🌐 *Sumber:* {job['sumber']}\n\n"
+                       f"🔗 [Klik untuk Detail]({job['link']})\n\n"
+                       f"#loker #freelance #kerjaan #indonesia")
                 
                 if kirim_telegram(msg):
                     if db:
@@ -147,19 +190,20 @@ if __name__ == "__main__":
                     
                     ditemukan_baru += 1
                     loker_counter += 1
-                    print(f"   ✅ Terkirim: {job['judul'][:30]}...")
+                    print(f"    ✅ Terkirim: {job['judul'][:30]}...")
                     
+                    # Cek jika sudah saatnya kirim iklan (setiap 12 post)
                     if loker_counter >= 12:
-                        time.sleep(10)
+                        time.sleep(5)
                         kirim_telegram(random.choice(IKLAN_LIST))
                         loker_counter = 0
                 
-                time.sleep(10)
+                time.sleep(10) # Jeda antar pengiriman pesan
 
-        print(f"✨ Selesai. Ditemukan {ditemukan_baru} loker baru.")
+        print(f"✨ Selesai. Ditemukan {ditemukan_baru} item baru.")
         
-        # Standby 10 menit
+        # Standby 10 menit (600 detik)
         print("😴 Standby mode (10 mins)...")
         for _ in range(60): 
-            cek_pesan_masuk()
+            cek_pesan_masuk() # Tetap cek pesan 'tes' saat tidur
             time.sleep(10)
