@@ -50,7 +50,7 @@ def analisa_loker_ai(judul, sumber):
         "dan 'catatan' (tips singkat keamanan)."
     )
     payload = {
-        "model": "google/gemini-flash-1.5-8b:free",
+        "model": "openai/gpt-4o-mini-2024-07-18", # Model GPT yang sangat stabil & murah/gratis
         "messages": [{"role": "user", "content": prompt}]
     }
     headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
