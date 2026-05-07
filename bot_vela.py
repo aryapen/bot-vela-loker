@@ -64,16 +64,14 @@ def analisa_loker_ai(judul, sumber):
         return {"ringkasan": judul, "kategori": "Umum", "skor_aman": 70, "catatan": "Selalu waspada penipuan."}
 
 def cek_konten_jorok_ai(teks):
-    """Mendeteksi kata kasar, toxic, atau asusila menggunakan AI"""
+    """Mendeteksi kata kasar dengan penanganan error yang lebih detail"""
     if not OPENROUTER_API_KEY: 
         return False
     
     url = "https://openrouter.ai/api/v1/chat/completions"
-    # Prompt instruksi khusus untuk AI
     prompt = (
-        f"Analisa pesan ini: '{teks}'. "
-        "Apakah mengandung kata kasar, umpatan, penghinaan, atau konten asusila/pornografi "
-        "dalam bahasa Indonesia atau daerah? Jawab hanya satu kata: 'YA' atau 'TIDAK'."
+        f"Analisa pesan ini: '{teks}'. Apakah mengandung kata kasar, umpatan, atau asusila? "
+        "Jawab hanya satu kata: 'YA' atau 'TIDAK'."
     )
     
     payload = {
@@ -86,12 +84,23 @@ def cek_konten_jorok_ai(teks):
     }
 
     try:
-        res = requests.post(url, headers=headers, data=json.dumps(payload), timeout=5)
-        # Ambil jawaban AI dan bersihkan spasi/karakter aneh
-        jawaban = res.json()['choices'][0]['message']['content'].strip().upper()
-        return "YA" in jawaban
+        res = requests.post(url, headers=headers, data=json.dumps(payload), timeout=7)
+        hasil_json = res.json()
+        
+        # Cek apakah ada error dari OpenRouter
+        if 'error' in hasil_json:
+            print(f"❌ OpenRouter Error: {hasil_json['error'].get('message')}")
+            return False
+
+        # Pastikan 'choices' ada di dalam respon
+        if 'choices' in hasil_json:
+            jawaban = hasil_json['choices'][0]['message']['content'].strip().upper()
+            return "YA" in jawaban
+        
+        print(f"⚠️ Respon aneh: {hasil_json}")
+        return False
     except Exception as e:
-        print(f"⚠️ AI Detector Error: {e}")
+        print(f"⚠️ Koneksi Error: {e}")
         return False
 
 # --- [ CORE FUNCTIONS : TELEGRAM & PROTEKSI ] ---
