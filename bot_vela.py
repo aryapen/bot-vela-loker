@@ -75,18 +75,17 @@ def proteksi_grup(update):
     return False
 
 
+# --- [ 1. FUNGSI SCRAPER INSTAGRAM ] ---
 def scrap_instagram(url):
-    """Mengambil data Instagram Reels menggunakan API yang kamu dapatkan"""
+    """Mengambil data Instagram Reels menggunakan API RapidAPI"""
     api_url = "https://instagram-reels-downloader-api.p.rapidapi.com/download"
     
-    # Header sesuai dengan curl yang kamu berikan
     headers = {
         "x-rapidapi-host": "instagram-reels-downloader-api.p.rapidapi.com",
-        "x-rapidapi-key": "084b4c8d9dmshe2c908f5a8c27dep185c91jsn6cf76429d2e6", # Key kamu
+        "x-rapidapi-key": "084b4c8d9dmshe2c908f5a8c27dep185c91jsn6cf76429d2e6",
         "Content-Type": "application/json"
     }
     
-    # Parameter URL instagram yang mau di-scrap
     querystring = {"url": url}
     
     try:
@@ -94,12 +93,9 @@ def scrap_instagram(url):
         response = requests.get(api_url, headers=headers, params=querystring, timeout=15)
         data = response.json()
         
-        # Logika pengambilan caption (biasanya di field 'description' atau 'title')
-        # Kita pakai .get() supaya tidak error kalau field-nya kosong
         res_data = data.get("data", {})
         caption = res_data.get("description") or res_data.get("title") or "Postingan Instagram Reels"
         
-        # Potong caption biar jadi judul ringkas
         judul = caption[:80] + "..." if len(caption) > 80 else caption
         return judul, url, "Instagram Reels"
         
@@ -107,6 +103,26 @@ def scrap_instagram(url):
         print(f"❌ Error saat scrap IG: {e}")
         return "Loker Instagram (Klik Link)", url, "Instagram"
 
+# --- [ 2. FUNGSI SCRAPER UNIVERSAL ] ---
+# Letakkan ini DI BAWAH scrap_instagram tapi DI ATAS cek_pesan_masuk
+def scrap_universal(url):
+    """Fungsi pembungkus untuk membedakan link IG atau Web Biasa"""
+    clean_url = url.split('?')[0]
+    
+    # Jika link Instagram, gunakan fungsi scrap_instagram di atas
+    if "instagram.com" in clean_url:
+        return scrap_instagram(clean_url)
+    
+    # Jika link web biasa, gunakan BeautifulSoup
+    try:
+        r = requests.get(clean_url, headers=HEADERS, timeout=10)
+        soup = BeautifulSoup(r.text, 'html.parser')
+        judul = soup.find('h1').text.strip() if soup.find('h1') else soup.title.text.strip()
+        return judul, clean_url, "Web Loker"
+    except:
+        return "Lowongan Kerja Baru", clean_url, "Web"
+
+# --- [ 3. FUNGSI CEK PESAN MASUK ] ---
 def cek_pesan_masuk():
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
@@ -123,10 +139,11 @@ def cek_pesan_masuk():
 
                 # --- FITUR JAPRI (PRIVATE CHAT) ---
                 if chat_type == "private" and text.startswith("http"):
-                    # Kirim notif ke kamu kalau bot lagi kerja
+                    # Kirim notif progres
                     requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
                                   json={'chat_id': chat_id_asal, 'text': "⏳ Sedang memproses link..."})
                     
+                    # Memanggil scrap_universal (Sekarang sudah terdefinisi di atas)
                     judul, link, sumber = scrap_universal(text)
                     
                     msg = (
@@ -139,26 +156,26 @@ def cek_pesan_masuk():
                         f"#loker #rekomendasi #vela"
                     )
                     
-                    # Kirim hasil scraping ke GRUP (CHAT_ID)
+                    # Kirim ke GRUP
                     kirim_telegram(msg, link)
                     
-                    # Balas ke kamu kalau sudah sukses
+                    # Balas ke kamu
                     requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
                                   json={'chat_id': chat_id_asal, 'text': "✅ Berhasil diteruskan ke grup!"})
                     
                     requests.get(url, params={'offset': update_id + 1})
                     continue
 
-                # --- PROTEKSI GRUP TETAP JALAN ---
+                # --- FITUR PROTEKSI GRUP ---
                 if chat_type in ["group", "supergroup"]:
                     if proteksi_grup(update):
                         requests.get(url, params={'offset': update_id + 1})
                         continue
-                
+
                 requests.get(url, params={'offset': update_id + 1})
     except Exception as e:
-        print(f"Error: {e}")
-
+        print(f"Error di cek_pesan_masuk: {e}")
+        
 # --- [ SCRAPER LOKER (SEMUA SUMBER) ] ---
 
 def get_all_jobs():
