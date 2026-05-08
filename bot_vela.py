@@ -287,18 +287,15 @@ if __name__ == "__main__":
 
     while True:
         # --- 1. HANDLE REALTIME (Proteksi Grup & Link Japri) ---
-        # Fungsi ini dijalankan setiap awal loop (sangat sering)
         cek_pesan_masuk()
 
         # --- 2. MONITOR AKUN TARGET INSTAGRAM (Setiap 2 Jam) ---
-        # 720 loop * 10 detik = 7200 detik = 120 menit
         if timer_ig >= 720:
             print(f"📸 [{time.strftime('%H:%M:%S')}] Monitoring Akun Instagram Target...")
             monitor_semua_ig()
-            timer_ig = 0 # Reset timer
+            timer_ig = 0
 
         # --- 3. SCRAPER WEB OTOMATIS (Setiap 30 Menit) ---
-        # Kita jalankan jika timer_web sudah mencapai 180 (180 * 10 detik = 30 menit)
         if timer_web >= 180:
             print(f"🔄 [{time.strftime('%H:%M:%S')}] Scanning Loker Web (Loker.id, dll)...")
             
@@ -330,9 +327,9 @@ if __name__ == "__main__":
                 sent_this_round += 1
                 loker_counter += 1
                 
-                # Kirim Iklan setiap 10 loker yang terkirim
-                if loker_counter >= 10:
-                    time.sleep(5)
+                # --- MODIFIKASI DISINI: Iklan muncul setiap 2 loker ---
+                if loker_counter >= 2:
+                    time.sleep(5) # Jeda dikit sebelum iklan
                     kirim_telegram(random.choice(IKLAN_LIST))
                     loker_counter = 0
                 
@@ -342,7 +339,6 @@ if __name__ == "__main__":
             timer_web = 0 # Reset timer
 
         # --- 4. STANDBY MODE (10 Detik) ---
-        # Loop kecil ini supaya bot tidak memakan CPU tinggi tapi tetap responsif
         time.sleep(10)
         timer_ig += 1
         timer_web += 1
