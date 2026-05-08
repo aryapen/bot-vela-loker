@@ -61,28 +61,68 @@ def kirim_telegram(pesan, link=None):
         pass
 
 def proteksi_grup(update):
-    """Menghapus pesan toxic & link luar secara instan"""
+    """Sistem Keamanan: Hapus Toxic/Link & Auto-Kick setelah 3x Pelanggaran"""
     message = update.get("message", {})
     text = message.get("text", "")
     chat_id = message.get("chat", {}).get("id")
     message_id = message.get("message_id")
-    user = message.get("from", {}).get("username", "User")
+    user_id = message.get("from", {}).get("id")
+    user_name = message.get("from", {}).get("username", "User")
 
     if not text: return False
 
-    # Cek Kata Kasar & Link
-    found_bad = re.search(POLA_KASAR, text.lower())
-    found_link = any(x in text.lower() for x in ["http://", "https://", "www.", ".com", ".link", ".xyz", "bit.ly"])
+    # 1. IDENTIFIKASI PELANGGARAN
+    is_toxic = re.search(POLA_KASAR, text.lower())
+    is_spam_link = any(x in text.lower() for x in ["http://", "https://", "www.", ".com", ".link", ".xyz", "bit.ly"])
 
-    if found_bad or found_link:
+    if is_toxic or is_spam_link:
+        # Tentukan alasan untuk pesan peringatan
+        alasan = "Berkata Kasar/Toxic" if is_toxic else "Mengirim Link Luar"
+        
+        # 2. HAPUS PESAN SECARA INSTAN
         url_del = f"https://api.telegram.org/bot{TOKEN}/deleteMessage"
         requests.post(url_del, data={'chat_id': chat_id, 'message_id': message_id})
         
-        alasan = "KATA KASAR" if found_bad else "LINK LUAR"
-        kirim_telegram(f"⚠️ @{user}, pesan kamu dihapus karena mengandung *{alasan}*!")
+        # 3. PENCATATAN PELANGGARAN (REDIS)
+        warn_count = 1
+        if db:
+            warn_key = f"user_warns:{user_id}"
+            warn_count = db.incr(warn_key)
+            db.expire(warn_key, 172800) # Data pelanggaran disimpan 2 hari (48 jam)
+
+        # 4. EKSEKUSI (WARN ATAU KICK)
+        if warn_count >= 3:
+            # Tendang Permanen
+            url_kick = f"https://api.telegram.org/bot{TOKEN}/banChatMember"
+            res = requests.post(url_kick, data={'chat_id': chat_id, 'user_id': user_id})
+            
+            if res.status_code == 200:
+                msg_kick = (
+                    f"🚫 **PEMBERSIHAN MEMBER**\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"👤 **User:** @{user_name}\n"
+                    f"⚠️ **Alasan:** Melanggar aturan 3x ({alasan})\n"
+                    f"⚖️ **Tindakan:** BANNED (Dikeluarkan)\n"
+                    f"━━━━━━━━━━━━━━━━━━"
+                )
+                kirim_telegram(msg_kick)
+                if db: db.delete(f"user_warns:{user_id}") # Bersihkan record setelah kick
+            else:
+                print(f"Gagal kick {user_name}, cek status admin bot.")
+        
+        else:
+            # Berikan Teguran
+            sisa_nyawa = 3 - warn_count
+            msg_warn = (
+                f"❌ **PERINGATAN {warn_count}/3**\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"Halo @{user_name}, pesan kamu dihapus karena mengandung **{alasan}**.\n\n"
+                f"Sisa kesempatan: *{sisa_nyawa}x lagi* sebelum kamu dikeluarkan otomatis dari grup!"
+            )
+            kirim_telegram(msg_warn)
+            
         return True
     return False
-
 
 # --- [ 1. FUNGSI SCRAPER INSTAGRAM ] ---
 def scrap_instagram(url):
