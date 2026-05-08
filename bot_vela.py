@@ -12,6 +12,14 @@ TOKEN = os.getenv('TELEGRAM_TOKEN', '8741502539:AAFHqzudVXD8C2m2xVudWJNs6ABu4V_Y
 CHAT_ID = os.getenv('CHAT_ID', '-1003997113925')
 REDIS_URL = os.getenv('REDIS_URL', 'redis://default:JLZspxuVQdJlGmpjTmzHFJvfxWWAJTEe@redis.railway.internal:6379')
 
+# Tambahkan username Instagram yang mau dipantau di sini
+TARGET_ACCOUNTS = [
+    "loker_jakarta",
+    "kemenaker",
+    "disnaker",
+    "loker_my_id"
+]
+
 # --- [ DATABASE SETUP ] ---
 try:
     db = redis.from_url(REDIS_URL, decode_responses=True)
@@ -175,7 +183,62 @@ def cek_pesan_masuk():
                 requests.get(url, params={'offset': update_id + 1})
     except Exception as e:
         print(f"Error di cek_pesan_masuk: {e}")
-        
+
+
+def monitor_semua_ig():
+    """Mengecek postingan terbaru dari semua akun di TARGET_ACCOUNTS"""
+    # Gunakan endpoint 'user_posts' atau 'posts' sesuai API kamu
+    api_url = "https://instagram-reels-downloader-api.p.rapidapi.com/user_posts" 
+    headers = {
+        "x-rapidapi-host": "instagram-reels-downloader-api.p.rapidapi.com",
+        "x-rapidapi-key": "084b4c8d9dmshe2c908f5a8c27dep185c91jsn6cf76429d2e6",
+    }
+
+    for username in TARGET_ACCOUNTS:
+        try:
+            print(f"🔄 Checking @{username}...")
+            res = requests.get(api_url, headers=headers, params={"username": username}, timeout=15)
+            data = res.json()
+            
+            # Ambil post terbaru
+            posts = data.get("data", [])
+            if not posts:
+                continue
+            
+            top_post = posts[0]
+            post_id = top_post.get("id")
+            shortcode = top_post.get("shortcode")
+            post_link = f"https://www.instagram.com/p/{shortcode}/"
+            caption = top_post.get("description") or "Cek postingan terbaru!"
+
+            # CEK DATABASE (Wajib pakai Redis agar tidak spam)
+            db_key = f"last_id_{username}"
+            if db and db.get(db_key) == post_id:
+                continue # Skip kalau ID masih sama dengan yang lama
+
+            # Format Pesan Cantik
+            msg = (
+                f"📢 *UPDATE TERBARU: @{username}*\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"📝 {caption[:250]}...\n\n"
+                f"🔗 *Cek Selengkapnya di IG*\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"#loker #update #monitor"
+            )
+
+            kirim_telegram(msg, post_link)
+            
+            # Simpan ID baru ke Redis
+            if db:
+                db.set(db_key, post_id)
+            
+            # Jeda sebentar antar akun biar API nggak curiga
+            time.sleep(5)
+
+        except Exception as e:
+            print(f"❌ Error monitor @{username}: {e}")
+
+
 # --- [ SCRAPER LOKER (SEMUA SUMBER) ] ---
 
 def get_all_jobs():
@@ -216,50 +279,69 @@ def get_all_jobs():
 
 if __name__ == "__main__":
     print("🔥 VELA GUARDIAN v4.0 STARTED (STABLE MODE) 🔥")
-    loker_counter = 0
+    
+    loker_counter = 0    # Untuk hitung kapan kirim iklan
+    timer_ig = 0         # Untuk jeda monitor akun target (IG)
+    timer_web = 0        # Untuk jeda scraper web (Loker.id dll)
 
     while True:
+        # --- 1. HANDLE REALTIME (Proteksi Grup & Link Japri) ---
+        # Fungsi ini dijalankan setiap awal loop (sangat sering)
         cek_pesan_masuk()
-        print(f"🔄 [{time.strftime('%H:%M:%S')}] Scanning Loker...")
-        
-        jobs = get_all_jobs()
-        random.shuffle(jobs)
-        
-        sent_this_round = 0
-        for job in jobs:
-            if sent_this_round >= 3: break
-            
-            # Cek Duplikat di Redis
-            link_id = job['link'].split('?')[0]
-            if db and db.get(link_id): continue
 
-            # Format Pesan
-            msg = (
-                f"🌟 *INFO LOKER TERVALID*\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"📌 *Posisi:* {job['judul']}\n"
-                f"🏢 *Sumber:* {job['sumber']}\n"
-                f"🛡️ *Status:* Terverifikasi Sistem\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"#loker #infocepet #guardian #vela"
-            )
+        # --- 2. MONITOR AKUN TARGET INSTAGRAM (Setiap 2 Jam) ---
+        # 720 loop * 10 detik = 7200 detik = 120 menit
+        if timer_ig >= 720:
+            print(f"📸 [{time.strftime('%H:%M:%S')}] Monitoring Akun Instagram Target...")
+            monitor_semua_ig()
+            timer_ig = 0 # Reset timer
 
-            kirim_telegram(msg, job['link'])
-            if db: db.setex(link_id, 604800, "sent")
+        # --- 3. SCRAPER WEB OTOMATIS (Setiap 30 Menit) ---
+        # Kita jalankan jika timer_web sudah mencapai 180 (180 * 10 detik = 30 menit)
+        if timer_web >= 180:
+            print(f"🔄 [{time.strftime('%H:%M:%S')}] Scanning Loker Web (Loker.id, dll)...")
             
-            sent_this_round += 1
-            loker_counter += 1
+            jobs = get_all_jobs()
+            random.shuffle(jobs)
             
-            # Kirim Iklan setiap 10 loker
-            if loker_counter >= 10:
-                time.sleep(5)
-                kirim_telegram(random.choice(IKLAN_LIST))
-                loker_counter = 0
-            
-            time.sleep(20) # Jeda antar postingan agar tidak spam
+            sent_this_round = 0
+            for job in jobs:
+                if sent_this_round >= 3: break
+                
+                # Cek Duplikat di Redis
+                link_id = job['link'].split('?')[0]
+                if db and db.get(link_id): continue
 
-        print(f"✅ Selesai. Standby 10 menit...")
-        # Standby 10 menit sambil tetap pantau chat grup
-        for _ in range(60): 
-            cek_pesan_masuk()
-            time.sleep(10)
+                # Format Pesan
+                msg = (
+                    f"🌟 *INFO LOKER TERVALID*\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"📌 *Posisi:* {job['judul']}\n"
+                    f"🏢 *Sumber:* {job['sumber']}\n"
+                    f"🛡️ *Status:* Terverifikasi Sistem\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"#loker #infocepet #guardian #vela"
+                )
+
+                kirim_telegram(msg, job['link'])
+                if db: db.setex(link_id, 604800, "sent") # Simpan 7 hari
+                
+                sent_this_round += 1
+                loker_counter += 1
+                
+                # Kirim Iklan setiap 10 loker yang terkirim
+                if loker_counter >= 10:
+                    time.sleep(5)
+                    kirim_telegram(random.choice(IKLAN_LIST))
+                    loker_counter = 0
+                
+                time.sleep(20) # Jeda antar postingan agar tidak spam/limit
+            
+            print(f"✅ Selesai Scanning Web. Standby...")
+            timer_web = 0 # Reset timer
+
+        # --- 4. STANDBY MODE (10 Detik) ---
+        # Loop kecil ini supaya bot tidak memakan CPU tinggi tapi tetap responsif
+        time.sleep(10)
+        timer_ig += 1
+        timer_web += 1
