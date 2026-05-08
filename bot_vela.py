@@ -74,25 +74,90 @@ def proteksi_grup(update):
         return True
     return False
 
+
+def scrap_instagram(url):
+    """Mengambil data Instagram Reels menggunakan API yang kamu dapatkan"""
+    api_url = "https://instagram-reels-downloader-api.p.rapidapi.com/download"
+    
+    # Header sesuai dengan curl yang kamu berikan
+    headers = {
+        "x-rapidapi-host": "instagram-reels-downloader-api.p.rapidapi.com",
+        "x-rapidapi-key": "084b4c8d9dmshe2c908f5a8c27dep185c91jsn6cf76429d2e6", # Key kamu
+        "Content-Type": "application/json"
+    }
+    
+    # Parameter URL instagram yang mau di-scrap
+    querystring = {"url": url}
+    
+    try:
+        print(f"📡 Menghubungi API Instagram untuk: {url}")
+        response = requests.get(api_url, headers=headers, params=querystring, timeout=15)
+        data = response.json()
+        
+        # Logika pengambilan caption (biasanya di field 'description' atau 'title')
+        # Kita pakai .get() supaya tidak error kalau field-nya kosong
+        res_data = data.get("data", {})
+        caption = res_data.get("description") or res_data.get("title") or "Postingan Instagram Reels"
+        
+        # Potong caption biar jadi judul ringkas
+        judul = caption[:80] + "..." if len(caption) > 80 else caption
+        return judul, url, "Instagram Reels"
+        
+    except Exception as e:
+        print(f"❌ Error saat scrap IG: {e}")
+        return "Loker Instagram (Klik Link)", url, "Instagram"
+
 def cek_pesan_masuk():
-    """Merespon perintah /tes dan menjalankan proteksi"""
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
         res = requests.get(url, params={'offset': -1, 'timeout': 1}, timeout=5).json()
+        
         if res.get("ok") and res.get("result"):
             for update in res["result"]:
                 update_id = update["update_id"]
-                if proteksi_grup(update):
+                message = update.get("message", {})
+                text = message.get("text", "")
+                chat_id_asal = message.get("chat", {}).get("id")
+                chat_type = message.get("chat", {}).get("type")
+                user_sender = message.get("from", {}).get("username", "")
+
+                # --- FITUR JAPRI (PRIVATE CHAT) ---
+                if chat_type == "private" and text.startswith("http"):
+                    # Kirim notif ke kamu kalau bot lagi kerja
+                    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
+                                  json={'chat_id': chat_id_asal, 'text': "⏳ Sedang memproses link..."})
+                    
+                    judul, link, sumber = scrap_universal(text)
+                    
+                    msg = (
+                        f"🚀 *LOKER PILIHAN ADMIN*\n"
+                        f"━━━━━━━━━━━━━━━━━━\n"
+                        f"📌 *Posisi:* {judul}\n"
+                        f"🏢 *Sumber:* {sumber}\n"
+                        f"🛡️ *Verifikasi:* Admin Verified\n"
+                        f"━━━━━━━━━━━━━━━━━━\n"
+                        f"#loker #rekomendasi #vela"
+                    )
+                    
+                    # Kirim hasil scraping ke GRUP (CHAT_ID)
+                    kirim_telegram(msg, link)
+                    
+                    # Balas ke kamu kalau sudah sukses
+                    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
+                                  json={'chat_id': chat_id_asal, 'text': "✅ Berhasil diteruskan ke grup!"})
+                    
                     requests.get(url, params={'offset': update_id + 1})
                     continue
-                
-                msg_text = update.get("message", {}).get("text", "").lower()
-                if "tes" in msg_text:
-                    kirim_telegram("✅ *VELA Guardian v4.0 Aktif!*\nSemua sistem (Scraper & Proteksi) berjalan normal. 🛡️")
+
+                # --- PROTEKSI GRUP TETAP JALAN ---
+                if chat_type in ["group", "supergroup"]:
+                    if proteksi_grup(update):
+                        requests.get(url, params={'offset': update_id + 1})
+                        continue
                 
                 requests.get(url, params={'offset': update_id + 1})
-    except:
-        pass
+    except Exception as e:
+        print(f"Error: {e}")
 
 # --- [ SCRAPER LOKER (SEMUA SUMBER) ] ---
 
