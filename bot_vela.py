@@ -132,59 +132,113 @@ def scrap_universal(url):
         return "Lowongan Kerja Baru", clean_url, "Web"
 
 # --- [ 3. FUNGSI CEK PESAN MASUK ] ---
+# --- [ 3. FUNGSI CEK PESAN MASUK ] ---
 def cek_pesan_masuk():
     try:
-        url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
-        res = requests.get(url, params={'offset': -1, 'timeout': 1}, timeout=5).json()
+        url_updates = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
+        res = requests.get(url_updates, params={'offset': -1, 'timeout': 1}, timeout=5).json()
         
         if res.get("ok") and res.get("result"):
             for update in res["result"]:
                 update_id = update["update_id"]
                 message = update.get("message", {})
+                
+                # Cek jika ini adalah Callback Query (Klik Tombol)
+                callback_query = update.get("callback_query")
+                if callback_query:
+                    handle_callback(callback_query)
+                    requests.get(url_updates, params={'offset': update_id + 1})
+                    continue
+
                 text = message.get("text", "")
                 chat_id_asal = message.get("chat", {}).get("id")
                 chat_type = message.get("chat", {}).get("type")
-                user_sender = message.get("from", {}).get("username", "")
+                user_sender = message.get("from", {}).get("username", "User")
 
-                # --- FITUR JAPRI (PRIVATE CHAT) ---
-                if chat_type == "private" and text.startswith("http"):
-                    # Kirim notif progres
-                    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
-                                  json={'chat_id': chat_id_asal, 'text': "⏳ Sedang memproses link..."})
-                    
-                    # Memanggil scrap_universal (Sekarang sudah terdefinisi di atas)
-                    judul, link, sumber = scrap_universal(text)
-                    
-                    msg = (
-                        f"🚀 *LOKER PILIHAN ADMIN*\n"
-                        f"━━━━━━━━━━━━━━━━━━\n"
-                        f"📌 *Posisi:* {judul}\n"
-                        f"🏢 *Sumber:* {sumber}\n"
-                        f"🛡️ *Verifikasi:* Admin Verified\n"
-                        f"━━━━━━━━━━━━━━━━━━\n"
-                        f"#loker #rekomendasi #vela"
-                    )
-                    
-                    # Kirim ke GRUP
-                    kirim_telegram(msg, link)
-                    
-                    # Balas ke kamu
-                    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
-                                  json={'chat_id': chat_id_asal, 'text': "✅ Berhasil diteruskan ke grup!"})
-                    
-                    requests.get(url, params={'offset': update_id + 1})
-                    continue
+                if not text: continue
 
-                # --- FITUR PROTEKSI GRUP ---
+                # --- MENU UTAMA DI CHAT PRIBADI ---
+                if chat_type == "private":
+                    if text == "/start" or text.lower() == "menu":
+                        payload = {
+                            'chat_id': chat_id_asal,
+                            'text': f"Halo @{user_sender}! 👋\n\nPanel Kendali **VELA GUARDIAN**.\nSilakan pilih menu di bawah:",
+                            'parse_mode': 'Markdown',
+                            'reply_markup': {
+                                'inline_keyboard': [
+                                    [{'text': '🔍 POST LOKER MANUAL (Kirim Link)', 'callback_data': 'info_link'}],
+                                    [{'text': '🛠️ AKTIFKAN MODE PERBAIKAN', 'callback_data': 'maintenance_on'}],
+                                    [{'text': '✅ NORMALKAN GRUP KEMBALI', 'callback_data': 'maintenance_off'}],
+                                    [{'text': '☕ CEK SAWERIA', 'url': 'https://saweria.co/FELIXDEVX'}]
+                                ]
+                            }
+                        }
+                        requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json=payload)
+
+                    elif text.startswith("http"):
+                        # Fitur kirim link loker manual tetap aktif
+                        judul, link, sumber = scrap_universal(text)
+                        msg = f"🚀 *LOKER PILIHAN ADMIN*\n━━━━━━━━━━━━━━━━━━\n📌 *Posisi:* {judul}\n🏢 *Sumber:* {sumber}\n━━━━━━━━━━━━━━━━━━"
+                        kirim_telegram(msg, link)
+                        requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={'chat_id': chat_id_asal, 'text': "✅ Berhasil diteruskan ke grup!"})
+
+                # --- PROTEKSI GRUP ---
                 if chat_type in ["group", "supergroup"]:
-                    if proteksi_grup(update):
-                        requests.get(url, params={'offset': update_id + 1})
-                        continue
+                    proteksi_grup(update)
 
-                requests.get(url, params={'offset': update_id + 1})
+                requests.get(url_updates, params={'offset': update_id + 1})
     except Exception as e:
         print(f"Error di cek_pesan_masuk: {e}")
 
+# --- [ FUNGSI BARU: HANDLE TOMBOL ] ---
+def handle_callback(callback):
+    data = callback.get("data")
+    callback_id = callback.get("id")
+    
+    # 1. Mode Perbaikan ON (Kunci Grup)
+    if data == "maintenance_on":
+        # Kirim notif ke grup
+        msg = "⚠️ **PEMBERITAHUAN SISTEM** ⚠️\n\nMohon maaf, saat ini bot sedang dalam **Update/Perbaikan**. Grup dikunci sementara agar tidak terjadi error.\n\n*Estimasi selesai: Secepatnya.*"
+        kirim_telegram(msg)
+        
+        # Kunci Grup (Member tidak bisa kirim pesan apapun)
+        url_lock = f"https://api.telegram.org/bot{TOKEN}/setChatPermissions"
+        perms = {
+            'chat_id': CHAT_ID,
+            'permissions': {
+                'can_send_messages': False,
+                'can_send_media_messages': False,
+                'can_send_polls': False,
+                'can_send_other_messages': False
+            }
+        }
+        requests.post(url_lock, json=perms)
+        
+        # Balas ke admin (Alert di layar HP)
+        requests.post(f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery", data={'callback_query_id': callback_id, 'text': "Grup Berhasil DIKUNCI 🔒"})
+
+    # 2. Mode Perbaikan OFF (Buka Grup)
+    elif data == "maintenance_off":
+        msg = "✅ **PERBAIKAN SELESAI** ✅\n\nSistem telah kembali normal. Sekarang kalian bisa mengirim pesan kembali. Terima kasih atas kesabarannya! 🙏"
+        kirim_telegram(msg)
+        
+        # Buka Grup (Kembalikan izin standar)
+        url_lock = f"https://api.telegram.org/bot{TOKEN}/setChatPermissions"
+        perms = {
+            'chat_id': CHAT_ID,
+            'permissions': {
+                'can_send_messages': True,
+                'can_send_media_messages': True,
+                'can_send_polls': True,
+                'can_send_other_messages': True,
+                'can_add_web_page_previews': True
+            }
+        }
+        requests.post(url_lock, json=perms)
+        requests.post(f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery", data={'callback_query_id': callback_id, 'text': "Grup Berhasil DIBUKA 🔓"})
+
+    elif data == "info_link":
+        requests.post(f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery", data={'callback_query_id': callback_id, 'text': "Silakan langsung kirim link lokernya di sini!"})
 
 def monitor_semua_ig():
     """Mengecek postingan terbaru dari semua akun di TARGET_ACCOUNTS"""
