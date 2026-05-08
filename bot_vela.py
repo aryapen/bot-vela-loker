@@ -281,21 +281,33 @@ def get_all_jobs():
 if __name__ == "__main__":
     print("🔥 VELA GUARDIAN v4.0 STARTED (STABLE MODE) 🔥")
     
-    loker_counter = 0    # Untuk hitung kapan kirim iklan
-    timer_ig = 0         # Untuk jeda monitor akun target (IG)
-    timer_web = 0        # Untuk jeda scraper web (Loker.id dll)
+    loker_counter = 0    # Untuk hitung kapan kirim iklan (per 2 loker)
+    timer_ig = 0         # Untuk jeda monitor akun target (IG) - 2 Jam
+    timer_web = 0        # Untuk jeda scraper web (Loker.id dll) - 30 Menit
+    timer_saweria = 0    # TAMBAHAN: Khusus Saweria - 1 Jam
 
     while True:
         # --- 1. HANDLE REALTIME (Proteksi Grup & Link Japri) ---
+        # FITUR UTAMA: Tetap jalan setiap iterasi (10 detik)
         cek_pesan_masuk()
 
         # --- 2. MONITOR AKUN TARGET INSTAGRAM (Setiap 2 Jam) ---
+        # FITUR UTAMA: Memantau 3 akun IG yang kamu targetkan
         if timer_ig >= 720:
             print(f"📸 [{time.strftime('%H:%M:%S')}] Monitoring Akun Instagram Target...")
             monitor_semua_ig()
             timer_ig = 0
 
-        # --- 3. SCRAPER WEB OTOMATIS (Setiap 30 Menit) ---
+        # --- 3. FITUR KHUSUS: SAWERIA (Setiap 1 Jam) ---
+        # 360 * 10 detik = 3600 detik = 1 Jam
+        if timer_saweria >= 360:
+            print(f"💰 [{time.strftime('%H:%M:%S')}] Saatnya Iklan Saweria (Hourly)...")
+            # Index [2] adalah teks Saweria di IKLAN_LIST kamu
+            kirim_telegram(IKLAN_LIST[2])
+            timer_saweria = 0
+
+        # --- 4. SCRAPER WEB OTOMATIS (Setiap 30 Menit) ---
+        # FITUR UTAMA: Scrape Loker.id, Indojob, dan Projects.co.id
         if timer_web >= 180:
             print(f"🔄 [{time.strftime('%H:%M:%S')}] Scanning Loker Web (Loker.id, dll)...")
             
@@ -306,11 +318,11 @@ if __name__ == "__main__":
             for job in jobs:
                 if sent_this_round >= 3: break
                 
-                # Cek Duplikat di Redis
+                # Cek Duplikat di Redis (Agar tidak kirim loker yang sama)
                 link_id = job['link'].split('?')[0]
                 if db and db.get(link_id): continue
 
-                # Format Pesan
+                # Format Pesan Cantik
                 msg = (
                     f"🌟 *INFO LOKER TERVALID*\n"
                     f"━━━━━━━━━━━━━━━━━━\n"
@@ -322,23 +334,26 @@ if __name__ == "__main__":
                 )
 
                 kirim_telegram(msg, job['link'])
-                if db: db.setex(link_id, 604800, "sent") # Simpan 7 hari
+                if db: db.setex(link_id, 604800, "sent") # Simpan record selama 7 hari
                 
                 sent_this_round += 1
                 loker_counter += 1
                 
-                # --- MODIFIKASI DISINI: Iklan muncul setiap 2 loker ---
+                # FITUR PENTING: Iklan Jasa muncul setiap 2 loker terkirim
                 if loker_counter >= 2:
-                    time.sleep(5) # Jeda dikit sebelum iklan
+                    time.sleep(5) 
+                    # Kirim iklan random (Logo/Jasa/Saweria) agar variatif
                     kirim_telegram(random.choice(IKLAN_LIST))
                     loker_counter = 0
                 
-                time.sleep(20) # Jeda antar postingan agar tidak spam/limit
+                time.sleep(20) # Anti-Spam Delay
             
             print(f"✅ Selesai Scanning Web. Standby...")
-            timer_web = 0 # Reset timer
+            timer_web = 0 # Reset timer web
 
-        # --- 4. STANDBY MODE (10 Detik) ---
+        # --- 5. STANDBY MODE (10 Detik) ---
+        # Semua timer bertambah setiap 10 detik
         time.sleep(10)
         timer_ig += 1
         timer_web += 1
+        timer_saweria += 1
