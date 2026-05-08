@@ -14,10 +14,9 @@ REDIS_URL = os.getenv('REDIS_URL', 'redis://default:JLZspxuVQdJlGmpjTmzHFJvfxWWA
 
 # Tambahkan username Instagram yang mau dipantau di sini
 TARGET_ACCOUNTS = [
-    "loker_jakarta",
-    "kemenaker",
-    "disnaker",
-    "loker_my_id"
+    "careerrindonesia",
+    "lokerfreelanceupdate",
+    "lokerfreelanceinfo",
 ]
 
 # --- [ DATABASE SETUP ] ---
