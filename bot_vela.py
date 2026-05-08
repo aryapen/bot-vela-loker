@@ -28,12 +28,14 @@ except:
     print("⚠️ Running without Redis")
 
 # --- [ DAFTAR KATA KASAR & IKLAN ] ---
-# Regex untuk menangkap kata kasar (bisa kamu tambah sendiri di dalam kurung)
 POLA_KASAR = r"(anjing|anjg|anj|kntol|kontol|memek|mmk|bgst|bangsat|goblok|gblk|tolol|idiot|peler|pler|asu|jancok|bajingan)"
 
 IKLAN_LIST = [
-    "🎨 *BUTUH LOGO PROFESIONAL?*\n\nBikin identitas bisnismu makin berkelas di *Luxcreativeee*.\n📸 *Cek:* [Instagram @luxcreativeee](https://www.instagram.com/luxcreativeee)",
-    "🚀 *JASA PROMOSI GRUP / BISNIS*\n\nMau loker atau bisnismu dipromosikan otomatis?\n📩 *Hubungi Owner:* [Chat FELIXDEV](https://t.me/felixdev_owner)"
+    "🎨 *BUTUH LOGO PROFESIONAL?*\n\nBikin identitas bisnismu makin berkelas di *Luxcreativeee*. Desain unik, eksklusif, dan revisi sampai puas!\n📸 *Cek Portfolio:* [Instagram @luxcreativeee](https://www.instagram.com/luxcreativeee)",
+    
+    "🚀 *JASA DESAIN & BRANDING*\n\nTerima jasa pembuatan Logo, Banner, Feed IG, hingga Edit Video. Harga bersahabat hasil melimpah!\n📩 *Hubungi Owner:* [Chat FELIXDEV](https://t.me/felixdev_owner)",
+    
+    "☕ *SUPPORT VELA GUARDIAN*\n\nBantu kami menjaga server tetap menyala dan admin tetap semangat update fitur! Dukung operasional kami seikhlasnya di:\n💰 [https://saweria.co/FELIXDEVX](https://saweria.co/FELIXDEVX)\n\n*Terima kasih atas dukungannya!* ❤️"
 ]
 
 HEADERS = {
