@@ -175,8 +175,6 @@ def scrap_universal(url):
 
 # --- [ 3. FUNGSI CEK PESAN MASUK ] ---
 # --- [ 3. FUNGSI CEK PESAN MASUK ] ---
-
-# --- [ 3. FUNGSI CEK PESAN MASUK ] ---
 def cek_pesan_masuk():
     try:
         url_updates = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
@@ -217,14 +215,19 @@ def cek_pesan_masuk():
                         requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
                                       json={'chat_id': chat_id_asal, 'text': "⚠️ Bot ini dalam mode privat. Hanya Owner yang dapat mengakses panel ini."})
                     else:
+                        # Cek Status Form (State) di Redis
+                        state = db.get(f"state:{user_id}") if db else None
+
+                        # Perintah Reset / Menu Utama
                         if text == "/start" or text.lower() == "menu":
+                            if db: db.delete(f"state:{user_id}") # Batalkan form jika ada
                             payload = {
                                 'chat_id': chat_id_asal,
                                 'text': f"Halo Boss @{user_sender}! 👋\n\nPanel Kendali **VELA GUARDIAN**.\nSilakan pilih menu di bawah:",
                                 'parse_mode': 'Markdown',
                                 'reply_markup': {
                                     'inline_keyboard': [
-                                        [{'text': '🔍 POST LOKER MANUAL (Kirim Link)', 'callback_data': 'info_link'}],
+                                        [{'text': '🔍 POST LOKER MANUAL (FORM)', 'callback_data': 'info_link'}],
                                         [{'text': '🛠️ AKTIFKAN MODE PERBAIKAN', 'callback_data': 'maintenance_on'}],
                                         [{'text': '✅ NORMALKAN GRUP KEMBALI', 'callback_data': 'maintenance_off'}],
                                         [{'text': '☕ CEK SAWERIA', 'url': 'https://saweria.co/FELIXDEVX'}]
@@ -233,11 +236,45 @@ def cek_pesan_masuk():
                             }
                             requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json=payload)
 
+                        # --- LOGIKA FORM TAHAP 1: TERIMA JUDUL ---
+                        elif state == "WAIT_JUDUL":
+                            if db:
+                                db.setex(f"temp_judul:{user_id}", 600, text) # Simpan judul 10 menit
+                                db.setex(f"state:{user_id}", 600, "WAIT_LINK")
+                            requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
+                                          json={'chat_id': chat_id_asal, 'text': "🔗 **TAHAP 2: LINK**\n\nJudul diterima. Sekarang kirimkan link lamarannya:"})
+
+                        # --- LOGIKA FORM TAHAP 2: TERIMA LINK & POSTING ---
+                        elif state == "WAIT_LINK":
+                            if "http" not in text:
+                                requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
+                                              json={'chat_id': chat_id_asal, 'text': "❌ Link tidak valid! Harus diawali http/https."})
+                            else:
+                                judul_manual = db.get(f"temp_judul:{user_id}") if db else "Lowongan Kerja"
+                                msg = (
+                                    f"🚀 *LOKER PILIHAN ADMIN*\n"
+                                    f"━━━━━━━━━━━━━━━━━━\n"
+                                    f"📌 *Posisi:* {judul_manual}\n"
+                                    f"🏢 *Sumber:* Admin Manual\n"
+                                    f"━━━━━━━━━━━━━━━━━━"
+                                )
+                                kirim_telegram(msg, text)
+                                
+                                # Hapus jejak form di Redis
+                                if db:
+                                    db.delete(f"state:{user_id}")
+                                    db.delete(f"temp_judul:{user_id}")
+                                
+                                requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
+                                              json={'chat_id': chat_id_asal, 'text': "✅ Berhasil diposting ke grup menggunakan format Form!"})
+
+                        # --- FITUR LAMA: SCRAP OTOMATIS JIKA KIRIM LINK LANGSUNG ---
                         elif text.startswith("http"):
                             judul, link, sumber = scrap_universal(text)
                             msg = f"🚀 *LOKER PILIHAN ADMIN*\n━━━━━━━━━━━━━━━━━━\n📌 *Posisi:* {judul}\n🏢 *Sumber:* {sumber}\n━━━━━━━━━━━━━━━━━━"
                             kirim_telegram(msg, link)
-                            requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={'chat_id': chat_id_asal, 'text': "✅ Berhasil diteruskan ke grup!"})
+                            requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
+                                          json={'chat_id': chat_id_asal, 'text': "✅ Link berhasil di-scrap dan diteruskan!"})
 
                 # --- PROTEKSI GRUP ---
                 if chat_type in ["group", "supergroup"]:
@@ -248,9 +285,12 @@ def cek_pesan_masuk():
         print(f"Error di cek_pesan_masuk: {e}")
 
 # --- [ FUNGSI HANDLE TOMBOL ] ---
+
+# --- [ FUNGSI HANDLE TOMBOL ] ---
 def handle_callback(callback):
     data = callback.get("data")
     callback_id = callback.get("id")
+    user_id = callback.get("from", {}).get("id")
     
     # 1. Mode Perbaikan ON (Kunci Grup)
     if data == "maintenance_on":
@@ -269,6 +309,34 @@ def handle_callback(callback):
         }
         requests.post(url_lock, json=perms)
         requests.post(f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery", data={'callback_query_id': callback_id, 'text': "Grup Berhasil DIKUNCI 🔒"})
+
+    # 2. Mode Perbaikan OFF (Buka Grup)
+    elif data == "maintenance_off":
+        msg = "✅ **PERBAIKAN SELESAI** ✅\n\nSistem telah kembali normal. Sekarang kalian bisa mengirim pesan kembali. Terima kasih atas kesabarannya! 🙏"
+        kirim_telegram(msg)
+        
+        url_lock = f"https://api.telegram.org/bot{TOKEN}/setChatPermissions"
+        perms = {
+            'chat_id': CHAT_ID,
+            'permissions': {
+                'can_send_messages': True,
+                'can_send_media_messages': True,
+                'can_send_polls': True,
+                'can_send_other_messages': True,
+                'can_add_web_page_previews': True
+            }
+        }
+        requests.post(url_lock, json=perms)
+        requests.post(f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery", data={'callback_query_id': callback_id, 'text': "Grup Berhasil DIBUKA 🔓"})
+
+    # 3. Form Post Manual
+    elif data == "info_link":
+        if db:
+            db.setex(f"state:{user_id}", 600, "WAIT_JUDUL") # Set status nunggu judul
+            requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
+                          json={'chat_id': user_id, 'text': "📝 **TAHAP 1: JUDUL**\n\nSilakan ketik Nama Posisi & Perusahaan.\nContoh: *Admin Social Media - PT Jaya Bersama*", 'parse_mode': 'Markdown'})
+        
+        requests.post(f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery", data={'callback_query_id': callback_id})
 
     # 2. Mode Perbaikan OFF (Buka Grup)
     elif data == "maintenance_off":
