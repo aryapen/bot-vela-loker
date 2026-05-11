@@ -12,6 +12,8 @@ TOKEN = os.getenv('TELEGRAM_TOKEN', '8741502539:AAFHqzudVXD8C2m2xVudWJNs6ABu4V_Y
 CHAT_ID = os.getenv('CHAT_ID', '-1003997113925')
 REDIS_URL = os.getenv('REDIS_URL', 'redis://default:JLZspxuVQdJlGmpjTmzHFJvfxWWAJTEe@redis.railway.internal:6379')
 
+ADMIN_ID = 8692419711
+
 # Tambahkan username Instagram yang mau dipantau di sini
 TARGET_ACCOUNTS = [
     "careerrindonesia",
@@ -173,6 +175,8 @@ def scrap_universal(url):
 
 # --- [ 3. FUNGSI CEK PESAN MASUK ] ---
 # --- [ 3. FUNGSI CEK PESAN MASUK ] ---
+
+# --- [ 3. FUNGSI CEK PESAN MASUK ] ---
 def cek_pesan_masuk():
     try:
         url_updates = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
@@ -183,44 +187,57 @@ def cek_pesan_masuk():
                 update_id = update["update_id"]
                 message = update.get("message", {})
                 
-                # Cek jika ini adalah Callback Query (Klik Tombol)
+                # --- FILTER CALLBACK (TOMBOL) ---
                 callback_query = update.get("callback_query")
                 if callback_query:
-                    handle_callback(callback_query)
+                    cb_user_id = callback_query.get("from", {}).get("id")
+                    # Proteksi Tombol: Hanya Admin yang bisa klik
+                    if cb_user_id == ADMIN_ID:
+                        handle_callback(callback_query)
+                    else:
+                        requests.post(f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery", 
+                                      data={'callback_query_id': callback_query.get("id"), 
+                                            'text': "❌ Akses Ditolak: Anda bukan Owner!", 'show_alert': True})
+                    
                     requests.get(url_updates, params={'offset': update_id + 1})
                     continue
 
                 text = message.get("text", "")
                 chat_id_asal = message.get("chat", {}).get("id")
                 chat_type = message.get("chat", {}).get("type")
+                user_id = message.get("from", {}).get("id")
                 user_sender = message.get("from", {}).get("username", "User")
 
                 if not text: continue
 
                 # --- MENU UTAMA DI CHAT PRIBADI ---
                 if chat_type == "private":
-                    if text == "/start" or text.lower() == "menu":
-                        payload = {
-                            'chat_id': chat_id_asal,
-                            'text': f"Halo @{user_sender}! 👋\n\nPanel Kendali **VELA GUARDIAN**.\nSilakan pilih menu di bawah:",
-                            'parse_mode': 'Markdown',
-                            'reply_markup': {
-                                'inline_keyboard': [
-                                    [{'text': '🔍 POST LOKER MANUAL (Kirim Link)', 'callback_data': 'info_link'}],
-                                    [{'text': '🛠️ AKTIFKAN MODE PERBAIKAN', 'callback_data': 'maintenance_on'}],
-                                    [{'text': '✅ NORMALKAN GRUP KEMBALI', 'callback_data': 'maintenance_off'}],
-                                    [{'text': '☕ CEK SAWERIA', 'url': 'https://saweria.co/FELIXDEVX'}]
-                                ]
+                    # Filter Pesan Pribadi: Hanya merespon Owner
+                    if user_id != ADMIN_ID:
+                        requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
+                                      json={'chat_id': chat_id_asal, 'text': "⚠️ Bot ini dalam mode privat. Hanya Owner yang dapat mengakses panel ini."})
+                    else:
+                        if text == "/start" or text.lower() == "menu":
+                            payload = {
+                                'chat_id': chat_id_asal,
+                                'text': f"Halo Boss @{user_sender}! 👋\n\nPanel Kendali **VELA GUARDIAN**.\nSilakan pilih menu di bawah:",
+                                'parse_mode': 'Markdown',
+                                'reply_markup': {
+                                    'inline_keyboard': [
+                                        [{'text': '🔍 POST LOKER MANUAL (Kirim Link)', 'callback_data': 'info_link'}],
+                                        [{'text': '🛠️ AKTIFKAN MODE PERBAIKAN', 'callback_data': 'maintenance_on'}],
+                                        [{'text': '✅ NORMALKAN GRUP KEMBALI', 'callback_data': 'maintenance_off'}],
+                                        [{'text': '☕ CEK SAWERIA', 'url': 'https://saweria.co/FELIXDEVX'}]
+                                    ]
+                                }
                             }
-                        }
-                        requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json=payload)
+                            requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json=payload)
 
-                    elif text.startswith("http"):
-                        # Fitur kirim link loker manual tetap aktif
-                        judul, link, sumber = scrap_universal(text)
-                        msg = f"🚀 *LOKER PILIHAN ADMIN*\n━━━━━━━━━━━━━━━━━━\n📌 *Posisi:* {judul}\n🏢 *Sumber:* {sumber}\n━━━━━━━━━━━━━━━━━━"
-                        kirim_telegram(msg, link)
-                        requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={'chat_id': chat_id_asal, 'text': "✅ Berhasil diteruskan ke grup!"})
+                        elif text.startswith("http"):
+                            judul, link, sumber = scrap_universal(text)
+                            msg = f"🚀 *LOKER PILIHAN ADMIN*\n━━━━━━━━━━━━━━━━━━\n📌 *Posisi:* {judul}\n🏢 *Sumber:* {sumber}\n━━━━━━━━━━━━━━━━━━"
+                            kirim_telegram(msg, link)
+                            requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={'chat_id': chat_id_asal, 'text': "✅ Berhasil diteruskan ke grup!"})
 
                 # --- PROTEKSI GRUP ---
                 if chat_type in ["group", "supergroup"]:
@@ -230,18 +247,16 @@ def cek_pesan_masuk():
     except Exception as e:
         print(f"Error di cek_pesan_masuk: {e}")
 
-# --- [ FUNGSI BARU: HANDLE TOMBOL ] ---
+# --- [ FUNGSI HANDLE TOMBOL ] ---
 def handle_callback(callback):
     data = callback.get("data")
     callback_id = callback.get("id")
     
     # 1. Mode Perbaikan ON (Kunci Grup)
     if data == "maintenance_on":
-        # Kirim notif ke grup
         msg = "⚠️ **PEMBERITAHUAN SISTEM** ⚠️\n\nMohon maaf, saat ini bot sedang dalam **Update/Perbaikan**. Grup dikunci sementara agar tidak terjadi error.\n\n*Estimasi selesai: Secepatnya.*"
         kirim_telegram(msg)
         
-        # Kunci Grup (Member tidak bisa kirim pesan apapun)
         url_lock = f"https://api.telegram.org/bot{TOKEN}/setChatPermissions"
         perms = {
             'chat_id': CHAT_ID,
@@ -253,8 +268,6 @@ def handle_callback(callback):
             }
         }
         requests.post(url_lock, json=perms)
-        
-        # Balas ke admin (Alert di layar HP)
         requests.post(f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery", data={'callback_query_id': callback_id, 'text': "Grup Berhasil DIKUNCI 🔒"})
 
     # 2. Mode Perbaikan OFF (Buka Grup)
@@ -262,7 +275,6 @@ def handle_callback(callback):
         msg = "✅ **PERBAIKAN SELESAI** ✅\n\nSistem telah kembali normal. Sekarang kalian bisa mengirim pesan kembali. Terima kasih atas kesabarannya! 🙏"
         kirim_telegram(msg)
         
-        # Buka Grup (Kembalikan izin standar)
         url_lock = f"https://api.telegram.org/bot{TOKEN}/setChatPermissions"
         perms = {
             'chat_id': CHAT_ID,
@@ -279,60 +291,6 @@ def handle_callback(callback):
 
     elif data == "info_link":
         requests.post(f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery", data={'callback_query_id': callback_id, 'text': "Silakan langsung kirim link lokernya di sini!"})
-
-def monitor_semua_ig():
-    """Mengecek postingan terbaru dari semua akun di TARGET_ACCOUNTS"""
-    # Gunakan endpoint 'user_posts' atau 'posts' sesuai API kamu
-    api_url = "https://instagram-reels-downloader-api.p.rapidapi.com/user_posts" 
-    headers = {
-        "x-rapidapi-host": "instagram-reels-downloader-api.p.rapidapi.com",
-        "x-rapidapi-key": "084b4c8d9dmshe2c908f5a8c27dep185c91jsn6cf76429d2e6",
-    }
-
-    for username in TARGET_ACCOUNTS:
-        try:
-            print(f"🔄 Checking @{username}...")
-            res = requests.get(api_url, headers=headers, params={"username": username}, timeout=15)
-            data = res.json()
-            
-            # Ambil post terbaru
-            posts = data.get("data", [])
-            if not posts:
-                continue
-            
-            top_post = posts[0]
-            post_id = top_post.get("id")
-            shortcode = top_post.get("shortcode")
-            post_link = f"https://www.instagram.com/p/{shortcode}/"
-            caption = top_post.get("description") or "Cek postingan terbaru!"
-
-            # CEK DATABASE (Wajib pakai Redis agar tidak spam)
-            db_key = f"last_id_{username}"
-            if db and db.get(db_key) == post_id:
-                continue # Skip kalau ID masih sama dengan yang lama
-
-            # Format Pesan Cantik
-            msg = (
-                f"📢 *UPDATE TERBARU: @{username}*\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"📝 {caption[:250]}...\n\n"
-                f"🔗 *Cek Selengkapnya di IG*\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"#loker #update #monitor"
-            )
-
-            kirim_telegram(msg, post_link)
-            
-            # Simpan ID baru ke Redis
-            if db:
-                db.set(db_key, post_id)
-            
-            # Jeda sebentar antar akun biar API nggak curiga
-            time.sleep(5)
-
-        except Exception as e:
-            print(f"❌ Error monitor @{username}: {e}")
-
 
 # --- [ SCRAPER LOKER (SEMUA SUMBER) ] ---
 
